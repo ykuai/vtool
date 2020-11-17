@@ -1,5 +1,6 @@
 package kk.onepice;
 
+import com.sun.javafx.tk.FileChooserType;
 import it.sauronsoftware.jave.Encoder;
 import it.sauronsoftware.jave.EncoderException;
 import it.sauronsoftware.jave.MultimediaInfo;
@@ -16,45 +17,53 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.util.StringUtil;
+import org.apache.poi.xssf.usermodel.XSSFRow;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
 
 public class VTool extends Application {
-
-	File targetFolder;
 	TextArea textArea;
+	File targetFolder;
 	Map<String, VideoSize> fileInfo;
+
+	File sendEmailFile;
 
 	public static void main(String[] args) {
 		launch(args);
 	}
 
-	@Override
-	public void start(final Stage stage) {
-		DirectoryChooser directoryChooser = new DirectoryChooser();
-		directoryChooser.setTitle("选择文件夹");
+
+	/**
+	 * 初始化处理视频的UI控件
+	 */
+	private void initHandVideoUI(Stage stage,GridPane inputGridPane){
+		DirectoryChooser videoDirectoryChooser = new DirectoryChooser();
+		videoDirectoryChooser.setTitle("选择文件夹");
 
 		Button openFolderButton = new Button("选择视频目录");
 		Label folderLabel = new Label("未指定视频目录");
+		folderLabel.setPrefWidth(200);
 		openFolderButton.setOnAction(
 				(final ActionEvent e) -> {
-					targetFolder = directoryChooser.showDialog(stage);
+					targetFolder = videoDirectoryChooser.showDialog(stage);
 					if (targetFolder != null) {
 						folderLabel.setText(targetFolder.getPath());
 					}
 				});
 
-		final Button startButton = new Button("开始处理");
+		final Button startButton = new Button("开始处理视频");
 		startButton.setOnAction(
 				(final ActionEvent e) -> {
 					if (targetFolder == null) {
@@ -67,19 +76,91 @@ public class VTool extends Application {
 					startHandle();
 				});
 
+		GridPane.setConstraints(openFolderButton, 0, 0);
+		GridPane.setConstraints(folderLabel, 1, 0);
+		GridPane.setConstraints(startButton, 2, 0);
+		inputGridPane.getChildren().addAll(openFolderButton, folderLabel, startButton);
+	}
+
+	/**
+	 * 初始化处理邮件的UI控件
+	 */
+	private void initHandEmailUI(Stage stage,GridPane inputGridPane){
+		FileChooser emailFileChooser = new FileChooser();
+		emailFileChooser.setTitle("选择文件");
+
+		Button openFileChooserButton = new Button("选择表格文件");
+		Label fileChooserLabel = new Label("未指定文件");
+
+		openFileChooserButton.setOnAction(
+				(final ActionEvent e) -> {
+					sendEmailFile = emailFileChooser.showOpenDialog(stage);
+					if (sendEmailFile != null) {
+						fileChooserLabel.setText(sendEmailFile.getPath());
+					}
+				});
+
+		final Button sendMailButton = new Button("开始发送邮件");
+		sendMailButton.setOnAction(
+				(final ActionEvent e) -> {
+					if (sendEmailFile == null) {
+						Alert alert = new Alert(Alert.AlertType.WARNING);
+						alert.setTitle("警告");
+						alert.setHeaderText("请指定发送邮件表格！");
+						alert.showAndWait();
+						return;
+					}
+					try {
+						startSendMail();
+					}catch (Exception ex){
+						printlnLog(ex.toString());
+					}
+
+				});
+
+		GridPane.setConstraints(openFileChooserButton, 0, 1);
+		GridPane.setConstraints(fileChooserLabel, 1, 1);
+		GridPane.setConstraints(sendMailButton, 2, 1);
+		inputGridPane.getChildren().addAll(openFileChooserButton, fileChooserLabel, sendMailButton);
+	}
+
+	private void startSendMail() throws Exception{
+		InputStream inputStream = new FileInputStream(sendEmailFile);
+		XSSFWorkbook book = new XSSFWorkbook(inputStream);
+		XSSFSheet sheet = book.getSheetAt(0);
+		int maxRowNum = sheet.getLastRowNum() + 1;
+		for (int i = 0; i < maxRowNum; i++) {
+			Row row = sheet.getRow(i);
+			if (row != null) {
+				String eAddr= row.getCell(0).getStringCellValue();
+				String eContent = row.getCell(1).getStringCellValue();
+				if(StringUtils.isBlank(eAddr)||StringUtils.isBlank(eContent)){
+					continue;
+				}
+				printlnLog(eAddr+":"+eContent);
+			}
+		}
+
+	}
+
+	@Override
+	public void start(final Stage stage) {
+		final GridPane inputGridPane = new GridPane();
+
+		// 处理视频功能
+		initHandVideoUI(stage,inputGridPane);
+		// 处理邮件功能
+		initHandEmailUI(stage,inputGridPane);
+
 		// 初始化日志打印区
 		textArea = new TextArea();
 		textArea.setPrefSize(400, 300);
 		textArea.setEditable(false);
+		GridPane.setConstraints(textArea, 0, 2, 3, 1);
 
-		final GridPane inputGridPane = new GridPane();
-		GridPane.setConstraints(openFolderButton, 0, 0);
-		GridPane.setConstraints(folderLabel, 1, 0);
-		GridPane.setConstraints(startButton, 0, 1);
-		GridPane.setConstraints(textArea, 0, 2, 2, 1);
 		inputGridPane.setHgap(6);
 		inputGridPane.setVgap(6);
-		inputGridPane.getChildren().addAll(openFolderButton, folderLabel, startButton, textArea);
+		inputGridPane.getChildren().add(textArea);
 
 		final Pane root = new VBox(12);
 		root.getChildren().add(inputGridPane);
@@ -170,13 +251,13 @@ public class VTool extends Application {
 				e.printStackTrace();
 			}
 			if (fileType.equalsIgnoreCase("mov")) {
+				file.setWritable(true);
 				boolean b = file.renameTo(new File(path.substring(0, path.lastIndexOf(".")) + ".mp4"));
 				if (b) {
 					printlnLog("Info：修改文件名成功 " + fileName);
 				} else {
 					printlnLog("Error：修改文件名失败，请关闭文件及其所在目录后重新尝试 " + fileName);
 				}
-
 			}
 		} else {
 			printlnLog("Warning：无法识别的文件 " + fileName);
